@@ -1,4 +1,6 @@
 import sys
+import os
+import dj_database_url
 from pathlib import Path
 from datetime import datetime as dt
 from django.utils.translation import gettext_lazy as _
@@ -15,46 +17,48 @@ from .datetime_settings import *    # NOQA
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# To get new value of key use code:
-# from django.core.management.utils import get_random_secret_key
-# print(get_random_secret_key())
-SECRET_KEY = 'j1c=6$s-dh#$ywt@(q4cm=j&0c*!0x!e-qm6k1%yoliec(15tn'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'j1c=6$s-dh#$ywt@(q4cm=j&0c*!0x!e-qm6k1%yoliec(15tn')
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Add your hosts to the list.
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-# Database
-DATABASES = {
-    'default': {
-        # for MySQl
-        'ENGINE': 'django.db.backends.mysql',
-        'PORT': '3306',
+# Add Render.com URL to ALLOWED_HOSTS
+if 'RENDER' in os.environ:
+    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
 
-        # for PostgreSQL
-        # "ENGINE": "django.db.backends.postgresql",
-        # 'PORT': '5432',   # for PostgreSQL
-
-        'NAME': 'crm_db',
-        'USER': 'crm_user',
-        'PASSWORD': 'crmpass',
-        'HOST': 'localhost',
+# Database configuration for both local and production
+if 'DATABASE_URL' in os.environ:
+    # Production - use PostgreSQL on Render
+    DATABASES = {
+        'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
     }
-}
+else:
+    # Local development - use MySQL as before
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'PORT': '3306',
+            'NAME': 'crm_db',
+            'USER': 'crm_user',
+            'PASSWORD': 'crmpass',
+            'HOST': 'localhost',
+        }
+    }
 
-EMAIL_HOST = '<specify host>'   # 'smtp.example.com'
-EMAIL_HOST_PASSWORD = '<specify password>'
-EMAIL_HOST_USER = 'crm@example.com'
-EMAIL_PORT = 587
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '<specify host>')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '<specify password>')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'crm@example.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_SUBJECT_PREFIX = 'CRM: '
 EMAIL_USE_TLS = True
 
-SERVER_EMAIL = 'test@example.com'
-DEFAULT_FROM_EMAIL = 'test@example.com'
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL', 'test@example.com')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'test@example.com')
 
 ADMINS = [("<Admin1>", "<admin1_box@example.com>")]   # specify admin
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 
 FORMS_URLFIELD_ASSUME_HTTPS = True
 
@@ -88,7 +92,6 @@ LANGUAGES = [
 TIME_ZONE = 'UTC'   # specify your time zone
 
 USE_I18N = True
-
 USE_TZ = True
 
 LOCALE_PATHS = [
@@ -119,6 +122,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Added for static files on Render
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -166,10 +170,13 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'static'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-MEDIA_URL = 'media/'
+# WhiteNoise configuration for static files
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 FIXTURE_DIRS = ['tests/fixtures']
@@ -178,13 +185,22 @@ MESSAGE_STORAGE = 'django.contrib.messages.storage.session.SessionStorage'
 
 SITE_ID = 1
 
-SECURE_HSTS_SECONDS = 0  # set to 31536000 for the production server
-# Set all the following to True for the production server
-SECURE_HSTS_INCLUDE_SUBDOMAINS = False
-SECURE_SSL_REDIRECT = False
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-SECURE_HSTS_PRELOAD = False
+# Security settings - adjust for production
+if 'RENDER' in os.environ:
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_PRELOAD = True
+else:
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_HSTS_PRELOAD = False
+
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # ---- CRM settings ---- #
@@ -245,8 +261,8 @@ VAT = 0    # %
 
 # 2-Step Verification Credentials for Google Accounts.
 #  OAuth 2.0
-CLIENT_ID = ''
-CLIENT_SECRET = ''
+CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 OAUTH2_DATA = {
     'smtp.gmail.com': {
         'scope': "https://mail.google.com/",
@@ -259,8 +275,8 @@ OAUTH2_DATA = {
 REDIRECT_URI = ''
 
 # Credentials for Google reCAPTCHA.
-GOOGLE_RECAPTCHA_SITE_KEY = ''
-GOOGLE_RECAPTCHA_SECRET_KEY = ''
+GOOGLE_RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY', '')
+GOOGLE_RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
 
 GEOIP = False
 GEOIP_PATH = MEDIA_ROOT / 'geodb'
@@ -291,7 +307,6 @@ MAILING = True
 COPYRIGHT_STRING = f"Django-CRM. Copyright (c) {dt.now().year}"
 PROJECT_NAME = "Django-CRM"
 PROJECT_SITE = "https://djangocrm.github.io/info/"
-
 
 TESTING = sys.argv[1:2] == ['test']
 if TESTING:
